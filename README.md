@@ -1,5 +1,6 @@
 # Med AI UI
-<iframe src="https://drive.google.com/file/d/1FCorwk4iJUNX9mVTEjTf3KuSiOevGzHF/preview" width="640" height="480"></iframe>
+
+[![Watch Demo](https://img.youtube.com/vi/_IC34JoNLaU/maxresdefault.jpg)](https://youtu.be/_IC34JoNLaU)
 
 A local medical RAG chatbot built with Streamlit. It combines:
 
