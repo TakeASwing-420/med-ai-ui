@@ -12,7 +12,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from qdrant_client import QdrantClient
 
 ROOT_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_PATH = ROOT_DIR / "my_finetuned_gemma"
 DEFAULT_QDRANT_PATH = ROOT_DIR / ".qdrant_store"
 DEFAULT_COLLECTION_NAME = "medical_passages"
 DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
@@ -218,15 +217,6 @@ if "messages" not in st.session_state:
 
 embedder = load_embedder(ollama_base_url, ollama_embed_model)
 client = get_qdrant_client(qdrant_path)
-
-try:
-    embedder.encode(["embedding check"])
-except requests.RequestException as exc:
-    st.error(
-        "Ollama is not reachable. Start Ollama locally and make sure the embedding model is pulled. "
-        f"Details: {exc}"
-    )
-    st.stop()
 
 st.caption(f"Generation endpoint: {generation_url}. Around 4k+ corpus texts in Qdrant vectorDB.")
 for message in st.session_state.messages:
