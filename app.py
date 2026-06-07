@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
 
-import numpy as np
 import requests
 import streamlit as st
 
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import OllamaEmbeddings
 from qdrant_client import QdrantClient
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -19,44 +18,18 @@ DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_GENERATION_URL = os.environ.get(
 "MED_AI_GENERATION_URL", "http://localhost:8988/generate/")
 
-class OllamaEmbedder:
-    def __init__(self, base_url: str, model_name: str):
-        self.base_url = base_url.rstrip("/")
-        self.model_name = model_name
-
-    def encode(self, texts: List[str], **_: object) -> np.ndarray:
-        response = requests.post(
-            f"{self.base_url}/api/embed",
-            json={"model": self.model_name, "input": texts},
-            timeout=120,
-        )
-        response.raise_for_status()
-        embeddings = response.json().get("embeddings", [])
-        if not embeddings:
-            return np.empty((0, 0), dtype=np.float32)
-        return np.asarray(embeddings, dtype=np.float32)
-
-
 @st.cache_resource(show_spinner=False)
 def load_embedder(base_url: str, model_name: str):
-    return OllamaEmbedder(base_url=base_url, model_name=model_name)
-
+    return OllamaEmbeddings(
+        model=model_name,
+        base_url=base_url,
+    )
 
 @st.cache_resource(show_spinner=False)
 def get_qdrant_client(qdrant_path: str):
     if QdrantClient is None:
         raise ImportError("qdrant-client is not installed.")
     return QdrantClient(path=qdrant_path)
-
-
-def embed_texts(embedder, texts: List[str]) -> List[List[float]]:
-    vectors = embedder.encode(
-        texts,
-        batch_size=32,
-        show_progress_bar=False,
-        normalize_embeddings=True,
-    )
-    return vectors.tolist()
 
 def retrieve_context(
     client,
@@ -65,7 +38,7 @@ def retrieve_context(
     query: str,
     top_k: int,
 ) -> list[dict[str, str]]:
-    query_vector = embed_texts(embedder, [query])[0]
+    query_vector = embedder.embed_query(query)
     response = client.query_points(
         collection_name=collection_name,
         query=query_vector,
@@ -90,13 +63,13 @@ def retrieve_context(
 def build_prompt(question: str, contexts: list[dict[str, str]]) -> str:
     """Build the single-turn prompt using ChatPromptTemplate.
 
-    The model expects a pipe-style prompt with explicit markers; we use
+    This gemma3 model currently expects a pipe-style prompt with explicit markers; we use
     ChatPromptTemplate to format the central human message and then wrap it
     with the <start_of_turn>/<end_of_turn> markers required by the model.
     """
     context_block = "\n\n".join(
-        f"[Source {index + 1} | id={item['id']} | score={item['score']}]\n{item['text']}"
-        for index, item in enumerate(contexts)
+        f"{item['text']}"
+        for _, item in enumerate(contexts)
     )
 
     if not context_block:
@@ -106,10 +79,7 @@ def build_prompt(question: str, contexts: list[dict[str, str]]) -> str:
         [("human", "Context:\n{context_block}\n\nQuestion:\n{question}")]
     )
 
-    # format the human message body
     human_body = prompt_template.format(context_block=context_block, question=question)
-
-    # wrap in turn markers that the model expects
     return f"<start_of_turn>user\n{human_body}<end_of_turn>\n<start_of_turn>model\n"
 
 def stream_answer_from_endpoint(
@@ -224,8 +194,8 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 st.text_area(
     "Example prompts",
-    value="""1. What is the proportion of non canonical splice sites in the human genome? 2. Is TENS machine effective in pain?""",
-    height=75,
+    value="""\t1. What is the proportion of non canonical splice sites in the human genome?\t2. What is the mode of inheritance of Facioscapulohumeral muscular dystrophy (FSHD)?\t3. Is TENS machine effective in pain?""",
+    height="content",
 )
 user_prompt = st.chat_input("Ask a medical question about the indexed corpus.")
 
@@ -255,4 +225,3 @@ if user_prompt:
             render_sources(sources)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
-
