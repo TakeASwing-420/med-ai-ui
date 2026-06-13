@@ -59,6 +59,23 @@ def retrieve_context(
     print("result_ids:", list(map(lambda x: x["id"], results)))
     return results
 
+def compute_retrieval_metrics(sources):
+
+    scores = [
+        float(s["score"])
+        for s in sources
+    ]
+
+    if not scores:
+        return {
+            "avg": 0.0,
+            "max": 0.0,
+        }
+
+    return {
+        "avg": sum(scores) / len(scores),
+        "max": max(scores),
+    }
 
 def build_prompt(question: str, contexts: list[dict[str, str]]) -> str:
     """Build the single-turn prompt using ChatPromptTemplate.
@@ -208,6 +225,7 @@ if user_prompt:
     with st.chat_message("assistant"):
         with st.spinner("Searching the corpus and generating an answer..."):
             sources = retrieve_context(client, embedder, collection_name, user_prompt, top_k)
+            retrieval_stats = compute_retrieval_metrics(sources)
             prompt = build_prompt(user_prompt, sources)
             answer = st.write_stream(
                 stream_answer_from_endpoint(
@@ -220,8 +238,21 @@ if user_prompt:
         if not isinstance(answer, str):
             answer = str(answer)
         print("Answer: ", answer)
-        st.markdown(answer)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric(
+                "Avg Retrieval Score",
+                f"{retrieval_stats['avg']:.3f}"
+            )
+
+        with col2:
+            st.metric(
+                "Best Retrieval Score",
+                f"{retrieval_stats['max']:.3f}"
+            )
+
         with st.expander("Retrieved context", expanded=False):
             render_sources(sources)
-
     st.session_state.messages.append({"role": "assistant", "content": answer})

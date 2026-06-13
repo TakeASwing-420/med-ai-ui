@@ -8,6 +8,7 @@ A local medical RAG chatbot built with Streamlit. It combines:
 - a local Qdrant vector store for retrieval over `corpus.parquet`
 - Ollama embeddings for indexing and retrieval
 - LangChain prompt orchestration with streamed answers in a chat-style Streamlit interface
+- Get Overall and average retrieval score against each retrieved passage IDs
 
 The app runs locally and does not require an API key. You only need Ollama running on your machine for embeddings.
 
@@ -41,10 +42,11 @@ The app runs locally and does not require an API key. You only need Ollama runni
 
 4. Start Ollama in a separate terminal if it is not already running.
 
-5. Pull the embedding model used by the app:
+5. Pull the embedding model and verification model used by the app:
 
    ```powershell
    ollama pull nomic-embed-text
+   ollama pull hf.co/MoMonir/Llama3-OpenBioLLM-8B-GGUF:Q4_K_M
    ```
 
 6. Start your model server. If you are exposing it through ngrok, copy the public `/generate/` URL.
@@ -63,12 +65,7 @@ The app runs locally and does not require an API key. You only need Ollama runni
 
 ## How It Works
 
-- The app reads passages from `corpus.parquet`.
-- It sends those passages to Ollama embeddings and stores the vectors in a local Qdrant database under `.qdrant_store/`.
-- When you ask a question, the app retrieves the most relevant passages from Qdrant.
-- LangChain assembles the system prompt, chat history, and retrieved context into a single prompt.
-- The prompt is sent to the configured generation endpoint, which can point to a local server or an ngrok tunnel.
-- The answer is streamed back into the Streamlit chat UI.
+<img src = "architecture.png" alt="Overall Architecture" height=375px width=100%/>
 
 ## Notes
 
