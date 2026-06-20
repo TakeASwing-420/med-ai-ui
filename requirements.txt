@@ -8,3 +8,4 @@ langchain-core
 langchain-ollama
 sentence-transformers
 torchvision
+einops
