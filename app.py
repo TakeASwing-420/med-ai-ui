@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-import os
+import os, time
 from pathlib import Path
 
 import requests
 import streamlit as st
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaEmbeddings
 from qdrant_client import QdrantClient
+from sentence_transformers import SentenceTransformer
 
 ROOT_DIR = Path(__file__).resolve().parent
 DEFAULT_QDRANT_PATH = ROOT_DIR / ".qdrant_store"
 DEFAULT_COLLECTION_NAME = "medical_passages"
-DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
+DEFAULT_EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_GENERATION_URL = os.environ.get(
 "MED_AI_GENERATION_URL", "http://localhost:8988/generate/")
 
 @st.cache_resource(show_spinner=False)
-def load_embedder(base_url: str, model_name: str):
-    return OllamaEmbeddings(
-        model=model_name,
-        base_url=base_url,
+def load_embedder(model_pth: str):
+    return SentenceTransformer(
+        model_pth,
+        trust_remote_code=True,
+        device="cpu",
     )
 
 @st.cache_resource(show_spinner=False)
 def get_qdrant_client(qdrant_path: str):
-    if QdrantClient is None:
-        raise ImportError("qdrant-client is not installed.")
     return QdrantClient(path=qdrant_path)
 
 def retrieve_context(
@@ -38,7 +37,10 @@ def retrieve_context(
     query: str,
     top_k: int,
 ) -> list[dict[str, str]]:
-    query_vector = embedder.embed_query(query)
+    query_vector = embedder.encode(
+        [query],
+        normalize_embeddings=True,
+    )[0]
     response = client.query_points(
         collection_name=collection_name,
         query=query_vector,
@@ -112,19 +114,25 @@ def stream_answer_from_endpoint(
         },
         timeout=300,
     )
-
     response.raise_for_status()
-
     payload = response.json()
-
+    print("RAW RESPONSE:", payload)
     answer = (
         payload.get("generated_text")
         or payload.get("response")
         or payload.get("text")
         or ""
     )
-
-    yield answer
+    
+    streaming = answer.split()
+    if not streaming:
+        return
+        
+    lastword = streaming.pop()
+    for word in streaming:
+        yield word + " "
+        time.sleep(0.2)
+    yield lastword
 
 def render_sources(sources: list[dict[str, str]]) -> None:
     if not sources:
@@ -189,9 +197,9 @@ with st.sidebar:
     qdrant_path = st.text_input("Qdrant storage path", value=str(DEFAULT_QDRANT_PATH))
     collection_name = st.text_input("Collection name", value=DEFAULT_COLLECTION_NAME)
     ollama_base_url = st.text_input("Ollama base URL", value=DEFAULT_OLLAMA_BASE_URL)
-    ollama_embed_model = st.text_input("Ollama embedding model", value=DEFAULT_OLLAMA_EMBED_MODEL)
+    embed_model = st.text_input("Ollama embedding model", value=DEFAULT_EMBED_MODEL)
     generation_url = st.text_input("Generation endpoint", value=DEFAULT_GENERATION_URL)
-    top_k = st.slider("Retrieved passages", min_value=1, max_value=8, value=4)
+    top_k = st.slider("Retrieved passages", min_value=1, max_value=4, value=2)
     max_length = st.slider("Answer length", min_value=128, max_value=2048, value=2000, step=64)
     clear_chat = st.button("Clear chat", use_container_width=True)
 
@@ -202,16 +210,16 @@ if clear_chat:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-embedder = load_embedder(ollama_base_url, ollama_embed_model)
+embedder = load_embedder(embed_model)
 client = get_qdrant_client(qdrant_path)
 
-st.caption(f"Generation endpoint: {generation_url}. Around 4k+ corpus texts in Qdrant vectorDB.")
+st.caption(f"Generation endpoint: {generation_url}. Around 40k+ corpus texts in Qdrant vectorDB.")
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 st.text_area(
     "Example prompts",
-    value="""\t1. What is the proportion of non canonical splice sites in the human genome?\t2. What is the mode of inheritance of Facioscapulohumeral muscular dystrophy (FSHD)?\t3. Is TENS machine effective in pain?""",
+    value="""\t1. List the human genes encoding for the dishevelled proteins?\t2. What is the mode of inheritance of Facioscapulohumeral muscular dystrophy (FSHD)?\t3. What is HIV?""",
     height="content",
 )
 user_prompt = st.chat_input("Ask a medical question about the indexed corpus.")

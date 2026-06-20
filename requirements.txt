@@ -6,3 +6,5 @@ pandas
 pyarrow
 langchain-core
 langchain-ollama
+sentence-transformers
+torchvision
